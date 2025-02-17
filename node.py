@@ -1,381 +1,444 @@
 
-import os
-import time
+import json
 import hashlib
-import uuid
-import threading
-import tracemalloc
+import time
+import types
 
-import tornado.web
-import tornado.ioloop
-import tornado.options
-import tornado.httpserver
-import tornado.gen
-import tornado.escape
+import tornado
+# import requests
 
+import web3
+import eth_account
+# import eth_typing
+import eth_abi
+import hexbytes
+
+
+# import chain
+# import database
+# import tree
+# import vm
+
+# import contracts
+# import state
+# import eth_tx
+# import console
 import setting
-import tree
-import mine
-import chain
-import database
-import eth_rpc
-import contracts
 
-tracemalloc.start()
+import ethereum_types.numeric
+import ethereum.crypto.hash
+import ethereum.genesis
+import ethereum.frontier.fork
+import ethereum.frontier.trie
+import ethereum.frontier.state
+import ethereum.frontier.transactions
+
+description: ethereum.genesis.GenesisFork[
+    ethereum.frontier.fork_types.Address,
+    ethereum.frontier.fork_types.Account,
+    ethereum.frontier.state.State,
+    ethereum.frontier.trie.Trie,
+    ethereum.frontier.fork_types.Bloom,
+    ethereum.frontier.blocks.Header,
+    ethereum.frontier.blocks.Block
+] = ethereum.genesis.GenesisFork(
+    Address=ethereum.frontier.fork_types.Address,
+    Account=ethereum.frontier.fork_types.Account,
+    Trie=ethereum.frontier.trie.Trie,
+    Bloom=ethereum.frontier.fork_types.Bloom,
+    Header=ethereum.frontier.blocks.Header,
+    Block=ethereum.frontier.blocks.Block,
+    set_account=ethereum.frontier.state.set_account,
+    set_storage=ethereum.frontier.state.set_storage,
+    state_root=ethereum.frontier.state.state_root,
+    root=ethereum.frontier.trie.root,
+    hex_to_address=ethereum.frontier.utils.hexadecimal.hex_to_address,
+)
+
+MAINNET_GENESIS_CONFIGURATION = ethereum.genesis.get_genesis_configuration("mainnet.json")
+
+state = ethereum.frontier.state.State()
+chain = ethereum.frontier.fork.BlockChain([], state, ethereum_types.numeric.U64(1))
+ethereum.genesis.add_genesis_block(description, chain, MAINNET_GENESIS_CONFIGURATION)
+
+class EthRpcHandler(tornado.web.RequestHandler):
+    # def options(self):
+    #     self.add_header('access-control-allow-methods', 'OPTIONS, POST')
+    #     self.add_header('access-control-allow-origin', '*')
+    #     self.add_header('access-control-allow-headers', 'content-type')
+    #     self.add_header('accept', 'application/json')
+
+    # def get(self):
+    #     self.redirect('/dashboard')
+
+    def post(self):
+        # print(self.request.arguments)
+        self.add_header('access-control-allow-methods', 'OPTIONS, POST')
+        self.add_header('access-control-allow-origin', '*')
+        req = tornado.escape.json_decode(self.request.body)
+        print(req)
+        rpc_id = req.get('id', '0')
+        if req.get('method') == 'eth_blockNumber':
+            # highest_block_height, _highest_block_hash, _highest_block = chain.get_highest_block() # change to get block number
+            latest_block_height = chain.blocks[-1].header.number
+            print(latest_block_height)
+            resp = {'jsonrpc':'2.0', 'result': hex(latest_block_height), 'id':rpc_id}
+
+        elif req.get('method') == 'eth_getBlockByNumber':
+            # latest_block_height = chain.get_latest_block_number()
+            latest_block_height = chain.blocks[-1].header.number
+            latest_block_hashes = [chain.blocks[-1].header.ommers_hash.hex()]
+            print(latest_block_height, latest_block_hashes)
+            if not latest_block_hashes:
+                latest_block_hashes.append('0'*64)
+            # resp = {'jsonrpc':'2.0', 'result': '0x'+highest_block_hash.decode('utf8'), 'id':rpc_id}
+            resp = {"jsonrpc":"2.0", "id": rpc_id,
+                "result":{
+                    # "number":"0x1",
+                    "number": hex(latest_block_height),
+                    # "hash":"0xffb0c9a9f7a192c9aaf1c1f05e32ce889ffea4006d3e016b0681b8e5b6a94ed2",
+                    "hash": '0x'+latest_block_hashes[0],
+                    # "parentHash":"0x137f2bacb32744f3f8637496ec2812df9cade335762792999c1799df0157db76",
+                    "nonce":"0x0000000000000042",
+                    "mixHash":"0x0000000000000000000000000000000000000000000000000000000000000000",
+                    # "sha3Uncles":"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+                    # "logsBloom":"0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                    "transactionsRoot":"0x7c50a9531c6d4af23d04fd77a1d4bac9d9e1ac6c37444909a5f645ff343ffaf7",
+                    "stateRoot":"0xe3fe0cf56db054e86175680de691dc8da487412edce44148d209b24586e29249",
+                    # "receiptsRoot":"0x12485246f5b5efab68f826355509c375b39d179c3837e5fdd7dd7336439b5623",
+                    "miner":"0xc014ba5ec014ba5ec014ba5ec014ba5ec014ba5e",
+                    "difficulty":"0x20000",
+                    "totalDifficulty":"0x20001",
+                    "extraData":"0x",
+                    "size":"0xe5f",
+                    "gasLimit":"0x1c9c380",
+                    "gasUsed":"0x0",
+                    "baseFeePerGas":"0x0",
+                    "timestamp":"0x644b949c",
+                    # "transactions":["0xed65f0ac3506915ba5cc0a5da762b651816928fcc272e6f828e5f1f823f4713d"],
+                    "transactions":[],
+                    "uncles":[]
+            }}
+
+
+        elif req.get('method') == 'eth_getBalance':
+            address = web3.Web3.to_checksum_address(req['params'][0])
+            account = state._main_trie._data[web3.Web3.to_bytes(hexstr=address)]
+            print(account)
+            balance = int(account.balance)
+
+            # latest_block_height = chain.get_latest_block_number()
+            # db = database.get_conn()
+            # it = db.iteritems()
+            # it.seek(('globalstate_%s_' % address).encode('utf8'))
+            # balance = 0
+            # for subchain_key, subchain_value in it:
+            #     if not subchain_key.startswith(('globalstate_%s_' % address).encode('utf8')):
+            #         break
+            #     print('count subchainkey', subchain_key, subchain_value)
+
+            resp = {'jsonrpc':'2.0', 'result': hex(balance), 'id':rpc_id}
+
+        elif req.get('method') == 'eth_getTransactionReceipt':
+            tx_hash = req['params'][0]
+            db = database.get_conn()
+            print(tx_hash)
+            tx_bytes = db.get(b'tx_%s' % tx_hash.encode('utf8'))
+            print(tx_bytes)
+            sender = tx_bytes.decode('utf8').split('_')[1]
+            subchain_block_json = db.get(tx_bytes)
+            print(subchain_block_json)
+            subchain_block = tornado.escape.json_decode(subchain_block_json)
+            data = subchain_block[chain.MSG_DATA]
+            print(data)
+            # count = data[0]
+            #signature = msg[chain.MSG_SIGNATURE]
+            #eth_tx_hash = eth_tx.hash_of_eth_tx_list(data)
+            #signature_obj = eth_account.Account._keys.Signature(bytes.fromhex(signature[2:]))
+            #pubkey = signature_obj.recover_public_key_from_msg_hash(eth_tx_hash)
+            #sender = pubkey.to_checksum_address()
+
+            result = {
+                'transactionHash': tx_hash,
+                'transactionIndex': 0,
+                'blockHash': tx_hash,
+                'blockNumber': 0,
+                'from': sender,
+                'to': data[3],
+                'cumulativeGasUsed': 0,
+                'gasUsed':0,
+                'contractAddress': '',
+                'logs': [],
+                'logsBloom': ''
+            }
+            resp = {'jsonrpc':'2.0', 'result': result, 'id': rpc_id}
+
+        elif req.get('method') == 'eth_getCode':
+            resp = {'jsonrpc':'2.0', 'result': '0x0208', 'id': rpc_id}
+
+        elif req.get('method') == 'eth_gasPrice':
+            resp = {'jsonrpc':'2.0', 'result': '0x0', 'id': rpc_id}
+
+        elif req.get('method') == 'eth_estimateGas': # Fuck! Dont change this 0x5208 again!
+            resp = {'jsonrpc':'2.0', 'result': '0x5208', 'id': rpc_id} # 21000 gas
+
+        elif req.get('method') == 'eth_maxPriorityFeePerGas':
+            resp = {'jsonrpc':'2.0', 'result': '0x0', 'id': rpc_id}
+
+        elif req.get('method') == 'eth_getTransactionCount':
+            address = req['params'][0].lower()
+            print('eth_getTransactionCount address', address)
+            count = 0
+
+            # it = db.iteritems()
+            # it.seek(('subchain_%s_' % address).encode('utf8'))
+            # for subchain_key, subchain_value in it:
+            #     print('count subchainkey', subchain_key, subchain_value)
+            #     if subchain_key.decode('utf8').startswith('subchain_%s_' % address):
+            #         subchain_key_list = subchain_key.decode('utf8').split('_')
+            #         reversed_height = int(subchain_key_list[2])
+            #         count = setting.REVERSED_NO - reversed_height
+            #     break
+
+            resp = {'jsonrpc':'2.0', 'result': hex(count), 'id': rpc_id}
+
+        elif req.get('method') == 'eth_getBlockByHash':
+            resp = {'jsonrpc':'2.0', 'result': '0x0', 'id': rpc_id}
+
+        elif req.get('method') == 'eth_sendRawTransaction':
+            params = req.get('params', [])
+            raw_tx_hex = params[0]
+            # print('raw_tx_hex', raw_tx_hex)
+            raw_tx_bytes = web3.Web3.to_bytes(hexstr=raw_tx_hex)
+            # print('raw_tx_bytes', raw_tx_bytes)
+            tx_list, vrs = eth_tx.eth_rlp2list(raw_tx_bytes)
+            if len(tx_list) == 8:
+                tx = eth_account._utils.typed_transactions.DynamicFeeTransaction.from_bytes(hexbytes.HexBytes(raw_tx_hex))
+                # tx = eth_account._utils.typed_transactions.TypedTransaction(transaction_type=2, transaction=tx)
+                tx_hash = tx.hash()
+                vrs = tx.vrs()
+                tx_to = web3.Web3.to_checksum_address(tx.as_dict()['to'])
+                tx_data = web3.Web3.to_hex(tx.as_dict()['data'])
+                tx_nonce = web3.Web3.to_int(tx.as_dict()['nonce'])
+            else:
+                tx = eth_account._utils.legacy_transactions.Transaction.from_bytes(raw_tx_bytes)
+                tx_hash = eth_account._utils.signing.hash_of_signed_transaction(tx)
+                vrs = eth_account._utils.legacy_transactions.vrs_from(tx)
+                tx_to = web3.Web3.to_checksum_address(tx.to)
+                tx_data = web3.Web3.to_hex(tx.data)
+                tx_nonce = tx.nonce
+
+            tx_from = eth_account.Account._recover_hash(tx_hash, vrs=vrs).lower()
+            # latest_block_height = chain.get_latest_block_number()
+
+            # _state = state.get_state()
+            # _state.block_number = latest_block_height
+            # contracts.vm_map[tx_to].global_vars['_block_number'] = _state.block_number
+            # contracts.vm_map[tx_to].global_vars['_call'] = state.call
+            # contracts.vm_map[tx_to].global_vars['_state'] = _state
+            # _state.sender = tx_from
+            # contracts.vm_map[tx_to].global_vars['_sender'] = tx_from
+            # _state.contract_address = tx_to
+            # contracts.vm_map[tx_to].global_vars['_self'] = _state.contract_address
+
+
+            # result = '0x'
+            # func_sig = tx_data[:10]
+            # # print(interface_map[func_sig], tx_data)
+            # func_params_data = tx_data[10:]
+            # func_params = [func_params_data[i:i+64] for i in range(0, len(func_params_data)-2, 64)]
+            # print('func', contracts.interface_map[tx_to][func_sig].__name__, func_params)
+            # func_params = []
+            # for k, v in zip(contracts.params_map[tx_to][contracts.interface_map[tx_to][func_sig].__name__], func_params):
+            #     # print('type', k, v)
+            #     if k == 'address':
+            #         func_params.append(web3.Web3.to_checksum_address('0x'+v[24:]))
+            #     elif k == 'uint256':
+            #         func_params.append(web3.Web3.to_int(hexstr=v))
+
+            # # result = interface_map[func_sig](*func_params)
+            # contracts.vm_map[tx_to].run(func_params, contracts.interface_map[tx_to][func_sig].__name__)
+
+            prev_hash = '0'*64
+            db = database.get_conn()
+            it = db.iteritems()
+            console.log(('subchain_%s_' % tx_from).encode('utf8'))
+            it.seek(('subchain_%s_' % tx_from).encode('utf8'))
+            for subchain_key, subchain_value in it:
+                print('eth_sendRawTransaction', subchain_key, subchain_value)
+                if not subchain_key.decode('utf8').startswith('subchain_%s_' % tx_from):
+                    prev_hash = '0'*64
+                    assert 1 == tx_nonce
+                    break
+
+                subchain_key_list = subchain_key.decode('utf8').split('_')
+                reversed_height = int(subchain_key_list[2])
+                count = setting.REVERSED_NO - reversed_height
+                print(reversed_height, count, tx_nonce)
+                assert count + 1 == tx_nonce
+
+                tx = tornado.escape.json_decode(subchain_value)
+                print('eth_sendRawTransaction tx', tx)
+                prev_hash = tx[0]
+                break
+
+            print('eth_sendRawTransaction prev_hash', prev_hash)
+
+            # _msg_header, block_hash, prev_hash, sender, receiver, height, data, timestamp, signature = seq
+            # tx_list, vrs = eth_rlp2list(raw_tx_bytes)
+            tx_list_json = json.dumps(tx_list)
+            new_timestamp = time.time()
+            block_hash_obj = hashlib.sha256((prev_hash + tx_from + tx_to + str(tx_nonce) + tx_list_json + str(new_timestamp)).encode('utf8'))
+            block_hash = block_hash_obj.hexdigest()
+            signature_obj = eth_account.Account._keys.Signature(vrs=vrs)
+            signature = signature_obj.to_hex()
+
+            seq = ['NEW_SUBCHAIN_BLOCK', block_hash, prev_hash, 'eth', new_timestamp, tx_list, signature]
+            chain.new_subchain_block(seq)
+            tree.forward(seq)
+
+            resp = {'jsonrpc':'2.0', 'result': '0x%s' % block_hash, 'id': rpc_id}
+
+        elif req.get('method') == 'eth_call':
+            console.log(req)
+            params = req.get('params', [])
+            print(params)
+            #try:
+            #if len(params) > 0:
+                #if 'to' in params[0] and 'data' in params[0] and params[0]['to'].lower() in contracts.contract_map:
+                    # contract = contract_map[params[0]['to'].lower()]
+            tx_to = params[0]['to']
+            tx_data = params[0]['data'].replace('0x', '')
+            #if tx_data.startswith('0x01ffc9a7'): # 80ac58cd for 721 and d9b67a26 for 1155
+                #resp = {"jsonrpc":"2.0","id":rpc_id,"error":{"code":-32603,"message":"Error: Transaction reverted without a reason string","data":{"message":"Error: Transaction reverted without a reason string","data":"0x"}}}
+            #    resp = {"jsonrpc":"2.0","id":rpc_id,"error":-32603}
+
+            if tx_to in contracts.vm_map:
+                latest_block_height = chain.get_latest_block_number()
+
+                state.block_number = latest_block_height
+                contracts.vm_map[tx_to].global_vars['_block_number'] = state.block_number
+                contracts.vm_map[tx_to].global_vars['_call'] = state.call
+                contracts.vm_map[tx_to].global_vars['_get'] = state.get
+                contracts.vm_map[tx_to].global_vars['_put'] = state.put
+                # contracts.vm_map[tx_to].global_vars['_sender'] = tx_from
+                state.contract_address = tx_to
+                contracts.vm_map[tx_to].global_vars['_self'] = state.contract_address
+
+                func_sig = tx_data[:8]
+                # print(contracts.interface_map[tx_to][func_sig], tx_data)
+                func_params_data = tx_data[8:]
+                # result = interface_map[func_sig](*func_params)
+
+                func_params_type = contracts.params_map[tx_to][contracts.interface_map[tx_to][func_sig].__name__]
+                # console.log(func_params_type)
+                # console.log(func_params_data)
+                func_params = eth_abi.decode(func_params_type, hexbytes.HexBytes(func_params_data))
+                # console.log(func_params)
+
+                value = contracts.vm_map[tx_to].run(func_params, contracts.interface_map[tx_to][func_sig].__name__)
+                func_return_type = contracts.return_map[tx_to][contracts.interface_map[tx_to][func_sig].__name__]
+                console.log(func_return_type, value)
+                result = eth_abi.encode([func_return_type], [value])
+                print('result', result)
+
+                resp = {'jsonrpc':'2.0', 'result': '0x'+result.hex(), 'id': rpc_id}
+
+            #except:
+            #    resp = {'jsonrpc':'2.0', 'result': '0x', 'id': rpc_id}
+
+            else:
+                #resp = {"jsonrpc":"2.0","id":rpc_id,"error":{"code":-32603,"message":"Error: Transaction reverted without a reason string","data":{"message":"Error: Transaction reverted without a reason string","data":"0x"}}}
+                resp = {"jsonrpc":"2.0","id":rpc_id,"error":-32603}
+                #resp = {'jsonrpc':'2.0', 'result': '0x0000000000000000000000000000000000000000000000000000000000000000', 'id': rpc_id}
+            print('resp', resp)
+
+        elif req.get('method') == 'eth_feeHistory':
+            resp = {'jsonrpc':'2.0', 'result': {}, 'id': rpc_id}
+        #     # db = database.get_conn()
+        #     # it = db.iteritems()
+        #     # it.seek(('headerblock_').encode('utf8'))
+        #     # no = 0
+        #     # for k, v in it:
+        #     #     print('eth_feeHistory', k, v)
+        #     #     if k.decode('utf8').startswith('headerblock_'):
+        #     #         ks = k.decode('utf8').split('_')
+        #     #         reverse_no = int(ks[1])
+        #     #         no = setting.REVERSED_NO - reverse_no
+        #     #         oldest = ks[2]
+        #     #     break
+
+        #     resp = {'jsonrpc':'2.0', 'result': {
+        #         "baseFeePerGas": [
+        #             "0x0",
+        #             "0x0",
+        #             "0x0",
+        #             "0x0",
+        #             "0x0"
+        #         ],
+        #         "gasUsedRatio": [
+        #             0.5290747666666666,
+        #             0.49240453333333334,
+        #             0.4615576,
+        #             0.49407083333333335,
+        #             0.4669053
+        #         ],
+        #         "oldestBlock": "0xfab8ac",
+        #         "reward": [
+        #             [
+        #                 "0x59682f00",
+        #                 "0x59682f00"
+        #             ],
+        #             [
+        #                 "0x59682f00",
+        #                 "0x59682f00"
+        #             ],
+        #             [
+        #                 "0x3b9aca00",
+        #                 "0x59682f00"
+        #             ],
+        #             [
+        #                 "0x510b0870",
+        #                 "0x59682f00"
+        #             ],
+        #             [
+        #                 "0x3b9aca00",
+        #                 "0x59682f00"
+        #             ]
+        #         ]
+        #     }, 'id': rpc_id}
+
+        elif req.get('method') == 'web3_clientVersion':
+            resp = {'jsonrpc':'2.0', 'result': 'BitPoW', 'id': rpc_id}
+
+        elif req.get('method') == 'eth_chainId':
+            resp = {'jsonrpc':'2.0', 'result': hex(setting.CHAIN_ID), 'id':rpc_id}
+
+        elif req.get('method') == 'net_version':
+            resp = {'jsonrpc':'2.0', 'result': str(setting.CHAIN_ID),'id': rpc_id}
+
+        elif req.get('method') == 'evm_snapshot':
+            resp = {'jsonrpc':'2.0', 'result': str(setting.CHAIN_ID),'id': rpc_id}
+
+        elif req.get('method') == 'eth_accounts':
+            resp = {'jsonrpc':'2.0', 'result': ['0x000d836201318ec6899a67540690382780743280'], 'id': rpc_id}
+
+        # print(resp)
+        self.write(tornado.escape.json_encode(resp))
+
 
 class Application(tornado.web.Application):
     def __init__(self):
-        handlers = [(r"/node", tree.NodeHandler),
-                    (r"/miner", tree.MinerHandler),
-                    (r"/nodes_available", AvailableNodesHandler),
-                    (r"/get_node", GetNodeHandler),
-
-                    (r"/get_chain_latest", chain.GetChainLatestHashHandler),
-                    (r"/get_chain_block", chain.GetChainBlockHandler),
-                    (r"/get_state_subchains", chain.GetStateSubchainsHandler),
-                    (r"/get_state_contracts", chain.GetStateContractsHandler),
-                    (r"/get_pool_subchains", chain.GetPoolSubchainsHandler),
-                    (r"/get_pool_blocks", chain.GetPoolBlocksHandler),
-
-                    # (r"/get_subchain_latest", chain.GetHighestSubchainBlockHashHandler),
-                    # (r"/get_highest_subchain_block_state", chain.GetHighestSubchainBlockStateHandler),
-                    # (r"/get_subchain_block", chain.GetSubchainBlockHandler),
-                    # (r"/get_subchain_block_state", chain.GetSubchainBlockStateHandler),
-                    (r"/new_subchain_block", NewSubchainBlockHandler),
-                    (r"/new_subchain_block_batch", NewSubchainBlockBatchHandler),
-
-                    (r"/dashboard", DashboardHandler),
-                    (r"/chain_blocks", ChainBlocksHandler),
-                    (r"/chain_block", ChainBlockHandler),
-                    (r"/contract_list", ContractListHandler),
-                    # (r"/subchain_list", SubchainListHandler),
-                    # (r"/subchain_blocks", SubchainBlocksHandler),
-
-                    (r"/scan/address/(.*)", ScanAddressHandler),
-                    (r"/scan/tx/(.*)", ScanTxHandler),
-
-                    # (r"/disconnect", DisconnectHandler),
-                    # (r"/broadcast", BroadcastHandler),
-                    # (r"/upload_chunk", UploadChunkHandler),
-                    (r"/tracemalloc", TraceHandler),
-                    # (r"/eth_rpc", eth_rpc.EthRpcHandler),
-                    # (r"/", eth_rpc.ProxyEthRpcHandler),
-                    (r"/", eth_rpc.EthRpcHandler),
-                    # (r"/", MainHandler),
+        handlers = [
+                    (r"/", EthRpcHandler),
                 ]
         settings = {"debug":True}
 
         tornado.web.Application.__init__(self, handlers, **settings)
 
 
-class MainHandler(tornado.web.RequestHandler):
-    def get(self):
-        self.redirect('/dashboard')
-
-class ScanAddressHandler(tornado.web.RequestHandler):
-    def get(self, addr):
-        self.finish('%s' % addr)
-
-class ScanTxHandler(tornado.web.RequestHandler):
-    def get(self, tx):
-        self.finish('%s' % tx)
-
-class AvailableNodesHandler(tornado.web.RequestHandler):
-    def get(self):
-        nodes = list(tree.nodes_available)
-
-        # parent = tree.NodeConnector.node_parent:
-        self.finish({"nodes_available": nodes,
-                     #"parent": parent,
-                     "nodeid": tree.current_nodeid})
-
-
-class GetNodeHandler(tornado.web.RequestHandler):
-    def get(self):
-        nodeid = self.get_argument("nodeid")
-        target_nodeid = nodeid
-        score = None
-        address = [tree.current_host, tree.current_port]
-        # print(tree.current_port, tree.node_neighborhoods)
-        for j in [tree.node_neighborhoods, tree.node_parents]:
-            for i in j:
-                new_score = tree.node_distance(nodeid, i)
-                if score is None or new_score < score:
-                    score = new_score
-                    target_nodeid = i
-                    address = j[target_nodeid]
-                # print(i, new_score)
-
-        self.finish({"address": address,
-                     "nodeid": target_nodeid,
-                     "current_nodeid": tree.current_nodeid})
-
-
-class DisconnectHandler(tornado.web.RequestHandler):
-    def get(self):
-        if tree.NodeConnector.node_parent:
-            # connector.remove_node = False
-            tree.NodeConnector.node_parent.close()
-
-        self.finish({})
-        tornado.ioloop.IOLoop.instance().stop()
-
-
-class BroadcastHandler(tornado.web.RequestHandler):
-    def get(self):
-        test_msg = ["TEST_MSG", tree.current_nodeid, time.time(), uuid.uuid4().hex]
-
-        tree.forward(test_msg)
-        self.finish({"test_msg": test_msg})
-
-
-class NewSubchainBlockHandler(tornado.web.RequestHandler):
-    # def get(self):
-    #     block =  ["58745b596bcfc8376527fd37cb2ca34224ff4d1d4f1d41053a889742f4bc77a8", "0000000000000000000000000000000000000000000000000000000000000000", "0xb88744C14D2E92cC653493df18bEF2E4b263c1FD", "0x504E18e367F32050951452Affc56082847628d28", 1, {"amount": 6}, 1633745105.8568707, "0x64a7f9a8b19cfd7597ecc6a49ada434b2101a7a8afc0ac78e59a59af3152eedc1a26e9a9b660373b8eae7bc2c646b393f0a51bd904e5a16336ebc3c3d77710c401"]
-    #     chain.new_subchain_block(['NEW_SUBCHAIN_BLOCK'] + block)
-    #     tree.forward(['NEW_SUBCHAIN_BLOCK'] + block) # + [time.time(), uuid.uuid4().hex]
-    #     self.finish({"block": block})
-
-    def post(self):
-        block = tornado.escape.json_decode(self.request.body)
-
-        chain.new_subchain_block(['NEW_SUBCHAIN_BLOCK'] + block)
-        tree.forward(['NEW_SUBCHAIN_BLOCK'] + block) # + [time.time(), uuid.uuid4().hex]
-        self.finish({"block": block})
-
-
-class NewSubchainBlockBatchHandler(tornado.web.RequestHandler):
-    def post(self):
-        blocks = tornado.escape.json_decode(self.request.body)
-        for block in blocks:
-            chain.new_subchain_block(['NEW_SUBCHAIN_BLOCK'] + block)
-            tree.forward(['NEW_SUBCHAIN_BLOCK'] + block) # + [time.time(), uuid.uuid4().hex]
-        # self.finish({"block": block})
-        self.finish({})
-
-
-class DashboardHandler(tornado.web.RequestHandler):
-    def get(self):
-        nodes_available = list(tree.nodes_available)
-        nodes_available.sort(key=lambda l:len(l[2]))
-
-        parents = []
-        self.write('<a href="/chain_blocks">Chain view</a> ')
-        self.write('<a href="/contract_list">Contract list</a> ')
-        # self.write('<a href="/subchain_list">Subchain list</a> ')
-        # self.write('<a href="/tempchain_list">Temp list</a>')
-        self.write('<br><br>current_nodeid: %s <br>' % tree.current_nodeid)
-
-        self.write('<br>pk: %s <br>' % tree.node_sk.public_key)
-        self.write('address: %s <br>' % tree.node_sk.public_key.to_checksum_address())
-        # sender = base64.b32encode(sender_vk.to_string()).decode("utf8")
-        self.write('<br>node_parent:<br>')
-        if tree.NodeConnector.node_parent:
-            self.write('%s:%s<br>' %(tree.NodeConnector.node_parent.host, tree.NodeConnector.node_parent.port))
-
-        self.write('<br>node_parents:<br>')
-        for nodeid in tree.node_parents:
-            host, port = tree.node_parents[nodeid]
-            self.write('%s %s:%s <a href="http://%s:%s/dashboard">dashboard</a><br>' %(nodeid, host, port, host, port))
-
-        self.write('<br>node_neighborhoods:<br>')
-        for nodeid in tree.node_neighborhoods:
-            host, port = tree.node_neighborhoods[nodeid]
-            self.write('%s %s:%s <a href="http://%s:%s/dashboard">dashboard</a><br>' %(nodeid, host, port, host, port))
-
-        self.write('<br>recent longest:<br>')
-        for i in reversed(chain.recent_longest):
-            self.write('%s <a href="/get_block?hash=%s">%s</a> %s<br>' % (i[chain.HEIGHT], i[chain.HASH], i[chain.HASH], i[chain.IDENTITY]))
-
-        self.write('<br>nodes_pool:<br>')
-        for nodeid in tree.nodes_pool:
-            pk = tree.nodes_pool[nodeid]
-            self.write("%s: %s<br>" %(nodeid, pk))
-
-        self.write('<br>nodes_in_chain:<br>')
-        for nodeid in chain.nodes_in_chain:
-            pk = chain.nodes_in_chain[nodeid]
-            self.write("%s: %s<br>" %(nodeid, pk))
-
-        # self.write('<br>frozen_nodes_in_chain:<br>')
-        # for nodeid in chain.frozen_nodes_in_chain:
-        #     pk = chain.frozen_nodes_in_chain[nodeid]
-        #     self.write('%s: %s<br>' %(nodeid, pk))
-
-        self.write('<br>nodes_available:<br>')
-        for branch in nodes_available:
-            self.write("%s:%s %s <br>" % branch)
-
-        # self.write('<br>subchain block to mine:<br>')
-        # for i, h in chain.subchains_to_block.items():
-        #     self.write("%s %s<br>" % (i, h))
-
-        self.write('<br>pool:<br>')
-        db = database.get_conn()
-        it = db.iteritems()
-        it.seek(b'pool')
-        for k, v in it:
-            if not k.startswith(b'pool'):
-                break
-            self.write("%s -> %s<br>"% (k[4:].decode(), v.decode()))
-        self.finish()
-
-
-class ChainBlocksHandler(tornado.web.RequestHandler):
-    def get(self):
-        self.write('<a href="/dashboard">Dashboard</a> ')
-        # self.write('<a href="/subchain_list">Subchain list</a> ')
-        # self.write('<a href="/tempchain_list">Temp list</a>')
-        self.write('</br></br>')
-
-        block_height = self.get_argument('height', None)
-        current_height = None
-        db = database.get_conn()
-        it = db.iteritems()
-        if block_height:
-            it.seek(('headerblock_%s' % str(setting.REVERSED_NO-int(block_height)).zfill(16)).encode('utf8'))
-        else:
-            it.seek(b'headerblock_')
-        for key, value in it:
-            if not key.decode('utf8').startswith('headerblock_'):
-                break
-            header = tornado.escape.json_decode(value)
-            block_hash = header[0]
-            header_data = header[1]
-            height = header_data['height']
-            if not current_height:
-                current_height = height
-                self.write('<a href="/chain_blocks?height=%s">Prev</a> ' % (current_height+10))
-                self.write('<a href="/chain_blocks?height=%s">Next</a> ' % (current_height-10))
-                self.write('<br><br>')
-            self.write("<a href='/chain_block?height=%s&hash=%s'>%s</a><br>" % (height, block_hash, key, ))
-            self.write("%s<br><br>" % (header_data, ))
-            self.write("%s<br><br>" % (value, ))
-            if height + 9 <= current_height:
-                break
-
-
-class ChainBlockHandler(tornado.web.RequestHandler):
-    def get(self):
-        block_hash= self.get_argument('hash', None)
-        block_height = self.get_argument('height', None)
-
-        self.write('<a href="/dashboard">Dashboard</a> ')
-        # self.write('<a href="/subchain_list">Subchain list</a> ')
-        # self.write('<a href="/tempchain_list">Temp list</a>')
-        self.write('</br></br>')
-
-        db = database.get_conn()
-        txbody = db.get(('txbody_%s_%s' % (str(setting.REVERSED_NO-int(block_height)).zfill(16), block_hash)).encode('utf8'))
-        txs = tornado.escape.json_decode(txbody)
-        for addr, height, subchain_hash in txs:
-            self.write("<a href='/get_pool_blocks?addr=%s&to_no=%s&to_hash=%s'>%s</a> <a href='/get_state_subchains?addrs=%s&height=%s'>%s</a> %s<br>" % (addr, height, subchain_hash, addr, addr, int(block_height)-1, subchain_hash, height))
-        self.write("<br>")
-        self.write("%s<br><br>" % (txbody, ))
-        statebody = db.get(('statebody_%s_%s' % (str(setting.REVERSED_NO-int(block_height)).zfill(16), block_hash)).encode('utf8'))
-        self.write("%s<br><br>" % (statebody, ))
-
-
-# class SubchainBlocksHandler(tornado.web.RequestHandler):
-#     def get(self):
-#         sender = self.get_argument('sender')
-#         assert len(sender) == 42 and (sender.startswith('0x') or sender.startswith('1x'))
-#         hash = self.get_argument('hash', None)
-#         self.write('<a href="/dashboard">Dashboard</a> ')
-#         self.write('<a href="/chain_blocks">Chain view</a> ')
-#         # self.write('<a href="/subchain_list">Subchain list</a> ')
-#         # self.write('<a href="/tempchain_list">Temp list</a>')
-#         self.write('</br></br>')
-
-#         db = database.get_conn()
-#         if hash is None:
-#             msg_hash = db.get(b'chain_%s' % sender.encode('utf8'))
-#             if not msg_hash:
-#                 return
-#         else:
-#             msg_hash = hash.encode('utf8')
-
-#         for i in range(2000):
-#             msg_json = db.get(b'msg_%s' % msg_hash)
-#             if not msg_json:
-#                 return
-
-#             msg = tornado.escape.json_decode(msg_json)
-#             self.write("<a href='/get_subchain_block_state?hash=%s'>%s</a><br>" % (msg[0], msg[4]))
-#             self.write("<code>%s</code><br><br>" % msg_json)
-#             msg_hash = msg[chain.PREV_HASH].encode('utf8')
-
-#         self.write("<a href='/subchain_blocks?sender=%s&hash=%s'>Next</a><br>" % (sender, msg_hash.decode('utf8')))
-
-
-# class SubchainListHandler(tornado.web.RequestHandler):
-#     def get(self):
-#         db = database.get_conn()
-#         it = db.iteritems()
-#         self.write('<a href="/dashboard">Dashboard</a> ')
-#         self.write('<a href="/chain_blocks">Chain view</a> ')
-#         # self.write('<a href="/tempchain_list">Temp list</a>')
-#         self.write('</br></br>')
-#         it.seek(b'chain_')
-#         for k, v in it:
-#             # if k == b'chain':
-#             #     # self.write("<a href='/chain_blocks?hash=%s'>main chain</a><br>"% v.decode())
-#             #     continue
-#             # if not k.startswith(b'chain_'):
-#             #     break
-#             if len(k) == 42+6:
-#                 self.write("<a href='/subchain_blocks?sender=%s'>%s</a> %s<br>"% (k.decode().replace('chain_', ''), k.decode().replace('chain_', 'Account '), v.decode()))
-#             # elif len(k) == 42+6 and k.startswith(b'chain_1x'):
-#             #     self.write("<a href='/subchain_blocks?sender=%s'>%s</a> %s<br>"% (k.decode().replace('chain_', ''), k.decode().replace('chain_', 'Contract '), v.decode()))
-
-
-class ContractListHandler(tornado.web.RequestHandler):
-    def get(self):
-        db = database.get_conn()
-        self.write('<a href="/dashboard">Dashboard</a> ')
-        self.write('<a href="/chain_blocks">Chain view</a> ')
-        # self.write('<a href="/tempchain_list">Temp list</a>')
-        self.write('</br></br>')
-        # it = db.iteritems()
-        # it.seek(b'chain_')
-        for k in contracts.contract_map:
-            self.write("<a href='/get_state_contracts?addr=%s'>%s</a><br>" % (k, k))
-
-
-class UploadChunkHandler(tornado.web.RequestHandler):
-    def post(self):
-        hash = self.get_argument('hash')
-        chunk = self.request.body
-        hash_verify = hashlib.sha256(chunk).hexdigest()
-        assert hash_verify == hash
-
-        if not os.path.exists('./chunks/'):
-            os.mkdir('./chunks/')
-        with open('./chunks/%s' % hash, 'wb') as c:
-            c.write(chunk)
-        self.finish({'len': len(chunk)})
-
-
-class TraceHandler(tornado.web.RequestHandler):
-    def get(self):
-        import html
-        snapshot = tracemalloc.take_snapshot()
-        top_stats = snapshot.statistics('lineno')
-
-        # self.write('[ Top 20 ]<br>')
-        for stat in top_stats[:20]:
-            print(stat)
-            stat = html.escape(str(stat))
-            self.write(stat+'<br>\n')
-
-
-def main():
-    tree.main()
-
-    server = Application()
-    server.listen(tree.current_port, '0.0.0.0')
-    tornado.ioloop.IOLoop.instance().start()
-
 if __name__ == '__main__':
-    main()
+    server = Application()
+    server.listen(8545, '127.0.0.1')
+    tornado.ioloop.IOLoop.instance().start()
 
