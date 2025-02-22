@@ -178,6 +178,9 @@ class EthRpcHandler(tornado.web.RequestHandler):
         elif req.get('method') == 'eth_sendTransaction':
             resp = {'jsonrpc':'2.0', 'result': '0x0', 'id': rpc_id}
 
+        elif req.get('method') == 'eth_getTransactionByHash':
+            resp = {'jsonrpc':'2.0', 'result': '0x0', 'id': rpc_id}
+
         elif req.get('method') == 'eth_sendRawTransaction':
             params = req.get('params', [])
             raw_tx_hex = params[0]
