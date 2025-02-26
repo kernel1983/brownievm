@@ -32,6 +32,7 @@ import ethereum.frontier.fork
 import ethereum.frontier.trie
 import ethereum.frontier.state
 import ethereum.frontier.transactions
+from ethereum.process_transaction import eth_sendTransaction
 
 description: ethereum.genesis.GenesisFork[
     ethereum.frontier.fork_types.Address,
@@ -176,7 +177,8 @@ class EthRpcHandler(tornado.web.RequestHandler):
             resp = {'jsonrpc':'2.0', 'result': '0x0', 'id': rpc_id}
 
         elif req.get('method') == 'eth_sendTransaction':
-            resp = {'jsonrpc':'2.0', 'result': '0x0', 'id': rpc_id}
+            tx_hash = eth_sendTransaction(req, chain)
+            resp = {'jsonrpc': '2.0', 'result': '0x' + tx_hash.hex(), 'id': rpc_id}
 
         elif req.get('method') == 'eth_getTransactionByHash':
             resp = {'jsonrpc':'2.0', 'result': '0x0', 'id': rpc_id}
