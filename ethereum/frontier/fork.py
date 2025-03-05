@@ -18,6 +18,7 @@ from typing import List, Optional, Set, Tuple
 from ethereum_rlp import rlp
 from ethereum_types.bytes import Bytes, Bytes32, Bytes20, Bytes8
 from ethereum_types.numeric import U64, U256, Uint
+from loguru import logger
 
 from ethereum.crypto.hash import Hash32, keccak256
 from ethereum.ethash import dataset_size, generate_cache, hashimoto_light
@@ -733,7 +734,7 @@ def process_transaction(
     gas_fee = tx.gas * tx.gas_price
     sender_account_nonce=U256(sender_account.nonce)
     tx_nonce=tx.nonce
-    print("sendernonce,txnonce:",sender_account_nonce,tx_nonce)
+    logger.info("sendernonce,txnonce:%s,%s"%(sender_account_nonce,tx_nonce))
     if sender_account_nonce != tx_nonce:
         raise InvalidBlock
     if Uint(sender_account.balance) < gas_fee + Uint(tx.value):

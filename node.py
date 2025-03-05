@@ -14,15 +14,6 @@ import eth_abi
 import hexbytes
 from loguru import logger
 
-# import chain
-# import database
-# import tree
-# import vm
-
-# import contracts
-# import state
-# import eth_tx
-# import console
 import setting
 
 import ethereum_types.numeric

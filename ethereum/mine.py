@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Tuple
 
 from ethereum_types.bytes import Bytes20, Bytes0
 from ethereum_types.numeric import U256, Uint
+from loguru import logger
 
 from ethereum.exceptions import InvalidBlock
 from ethereum.frontier.blocks import Block
@@ -25,7 +26,7 @@ class MinerNode:
         Create a transaction object from the JSON-RPC data.
         """
         params = data['params'][0]
-        # print("tx nonce:",U256(int(params['nonce'], 16)))
+
         if 'to' in params and params['to'] != "0x0000000000000000000000000000000000000000":
             to = Bytes20(hex_to_bytes(params['to']))
         else:
@@ -56,9 +57,9 @@ class MinerNode:
         # Add transaction validation logic
         if self.validate_transaction(tx):
             self.transaction_pool.append(tx)
-            print(f"Transaction added to pool: {tx}")
+            logger.info(f"Transaction added to pool: {tx}")
         else:
-            print(f"Invalid transaction: {tx}")
+            logger.info(f"Invalid transaction: {tx}")
 
     def validate_transaction(self, transaction: Transaction) -> bool:
         # Verify transactions to check if the signature of the transaction is valid.
@@ -68,7 +69,7 @@ class MinerNode:
 
     def mine_block(self):
         if not self.transaction_pool:
-            print("No transactions to mine.")
+            logger.info("No transactions to mine.")
             return
 
         # Select transactions (here simply select all transactions)
