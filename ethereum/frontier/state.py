@@ -23,7 +23,9 @@ from ethereum_types.bytes import Bytes, Bytes32
 from ethereum_types.frozen import modify
 from ethereum_types.numeric import U256, Uint
 
+from .blocks import Receipt
 from .fork_types import EMPTY_ACCOUNT, Account, Address, Root
+from .transactions import Transaction
 from .trie import EMPTY_TRIE_ROOT, Trie, copy_trie, root, trie_get, trie_set
 
 
@@ -45,6 +47,13 @@ class State:
             Dict[Address, Trie[Bytes32, U256]],
         ]
     ] = field(default_factory=list)
+    # added _receipt_trie and _transaction_trie
+    _receipt_trie:Trie[Bytes, Optional[Receipt]] = field(
+        default_factory=lambda: Trie(secured=False, default=None)
+    )
+    _transaction_trie:Trie[Bytes, Optional[Transaction]] =field(
+        default_factory=lambda: Trie(secured=False, default=None)
+    )
 
 
 def close_state(state: State) -> None:

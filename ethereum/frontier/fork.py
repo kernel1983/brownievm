@@ -11,12 +11,12 @@ Introduction
 
 Entry point for the Ethereum specification.
 """
-
+import time
 from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
 
 from ethereum_rlp import rlp
-from ethereum_types.bytes import Bytes, Bytes32
+from ethereum_types.bytes import Bytes, Bytes32, Bytes20, Bytes8
 from ethereum_types.numeric import U64, U256, Uint
 
 from ethereum.crypto.hash import Hash32, keccak256
@@ -40,11 +40,12 @@ from .transactions import (
     Transaction,
     calculate_intrinsic_cost,
     recover_sender,
-    validate_transaction,
+    validate_transaction, signing_hash,
 )
 from .trie import Trie, root, trie_set
 from .utils.message import prepare_message
 from .vm.interpreter import process_message_call
+from ..utils import temp_param   #new add
 
 BLOCK_REWARD = U256(5 * 10**18)
 GAS_LIMIT_ADJUSTMENT_FACTOR = Uint(1024)
@@ -180,6 +181,56 @@ def state_transition(chain: BlockChain, block: Block) -> None:
         # Real clients have to store more blocks to deal with reorgs, but the
         # protocol only requires the last 255
         chain.blocks = chain.blocks[-255:]
+
+
+def execution_transaction(txs, chain: BlockChain) -> Block:
+    """
+    Execution transactions, and generate new blocks.
+    """
+    # tx_trie = Trie(secured=False, default=None)
+    # receipt_trie = Trie(secured=False, default=None)
+    block_logs: Tuple[Log, ...] = ()
+    parent_block = chain.blocks[-1]
+    coinbase = temp_param.COINBASE_address
+    block_number=Uint(int(parent_block.header.number) + 1)
+    block_gas_limit = temp_param.BLOCK_gas_limit
+    difficulty = parent_block.header.difficulty,
+    timestamp = U256(int(time.time()))
+
+    body_output = apply_body(
+        chain.state,
+        get_last_256_block_hashes(chain),
+        coinbase,
+        block_number,
+        block_gas_limit,
+        timestamp,
+        difficulty,
+        txs,
+    )
+
+    new_nonce_int = int.from_bytes(parent_block.header.nonce, byteorder='big') + 1
+    header = Header(
+        parent_hash=keccak256(rlp.encode(chain.blocks[-1].header.parent_hash)),
+        ommers_hash=keccak256(coinbase),
+        coinbase=coinbase,
+        state_root=state_root(chain.state),
+        transactions_root=body_output.transactions_root,
+        receipt_root=body_output.receipt_root,
+        bloom=body_output.block_logs_bloom,
+        difficulty=temp_param.HEADER_difficulty,
+        number=Uint(int(chain.blocks[-1].header.number) + 1),
+        gas_limit=temp_param.HEADER_gas_limit,
+        gas_used=body_output.block_gas_used,
+        timestamp=U256(int(time.time())),
+        extra_data=temp_param.HEADER_extra_data,
+        mix_digest=keccak256(coinbase),
+        nonce=Bytes8(new_nonce_int.to_bytes(8, byteorder='big'))
+    )
+    ommers: Tuple[Header, ...] = (header,)
+
+    pay_rewards(chain.state, block_number, coinbase, ommers)
+
+    return Block(header=header, transactions=txs, ommers=ommers)
 
 
 def validate_header(header: Header, parent_header: Header) -> None:
@@ -334,6 +385,11 @@ def make_receipt(
     post_state: Bytes32,
     cumulative_gas_used: Uint,
     logs: Tuple[Log, ...],
+    block_number: Uint,
+    index: Uint,
+    status: bool,
+    gas_used: Uint,
+    from_addr: Address,
 ) -> Receipt:
     """
     Make the receipt for a transaction that was executed.
@@ -360,6 +416,14 @@ def make_receipt(
         cumulative_gas_used=cumulative_gas_used,
         bloom=logs_bloom(logs),
         logs=logs,
+        transaction_hash=signing_hash(tx),
+        block_number=block_number,
+        transaction_index=index,
+        status=status,
+        gas_used=gas_used,
+        from_addr=from_addr,
+        gas_price=tx.gas_price,
+        to=tx.to,
     )
 
     return receipt
@@ -401,7 +465,6 @@ def apply_body(
     block_time: U256,
     block_difficulty: Uint,
     transactions: Tuple[Transaction, ...],
-    ommers: Tuple[Header, ...],
 ) -> ApplyBodyOutput:
     """
     Executes a block.
@@ -442,18 +505,28 @@ def apply_body(
         Output of applying the block body to the state.
     """
     gas_available = block_gas_limit
-    transactions_trie: Trie[Bytes, Optional[Transaction]] = Trie(
-        secured=False, default=None
-    )
-    receipts_trie: Trie[Bytes, Optional[Receipt]] = Trie(
-        secured=False, default=None
-    )
+    # transactions_trie: Trie[Bytes, Optional[Transaction]] = Trie(
+    #     secured=False, default=None
+    # )
+    # receipts_trie: Trie[Bytes, Optional[Receipt]] = Trie(
+    #     secured=False, default=None
+    # )
+
     block_logs: Tuple[Log, ...] = ()
 
     for i, tx in enumerate(transactions):
-        trie_set(transactions_trie, rlp.encode(Uint(i)), tx)
+        trie_set(state._transaction_trie, signing_hash(tx), tx)
 
         sender_address = check_transaction(tx, gas_available)
+
+        receipt=Receipt()
+        receipt.block_number = block_number
+        receipt.post_state = state_root(state)
+        receipt.from_addr=sender_address
+        receipt.transaction_index=Uint(i)
+        receipt.transaction_hash=signing_hash(tx)
+        receipt.to=tx.to
+        receipt.gas_price=tx.gas_price
 
         env = vm.Environment(
             caller=sender_address,
@@ -469,22 +542,25 @@ def apply_body(
             traces=[],
         )
 
-        gas_used, logs = process_transaction(env, tx)
-        gas_available -= gas_used
+        receipt = process_transaction(env, tx,receipt)
+        gas_available -= receipt.gas_used
+        receipt.cumulative_gas_used=block_gas_limit - gas_available
 
-        receipt = make_receipt(
-            tx, state_root(state), (block_gas_limit - gas_available), logs
-        )
+
+        # receipt = make_receipt(
+        #     tx, state_root(state), cumulative_gas_used, logs,
+        #     block_number,Uint(i),True,gas_used,sender_address
+        # )
 
         trie_set(
-            receipts_trie,
-            rlp.encode(Uint(i)),
+            state._receipt_trie,
+            signing_hash(tx),
             receipt,
         )
 
-        block_logs += logs
+        block_logs += receipt.logs
 
-    pay_rewards(state, block_number, coinbase, ommers)
+
 
     block_gas_used = block_gas_limit - gas_available
 
@@ -492,8 +568,8 @@ def apply_body(
 
     return ApplyBodyOutput(
         block_gas_used,
-        root(transactions_trie),
-        root(receipts_trie),
+        root(state._transaction_trie),
+        root(state._receipt_trie),
         block_logs_bloom,
         state_root(state),
     )
@@ -620,8 +696,8 @@ def pay_rewards(
 
 
 def process_transaction(
-    env: vm.Environment, tx: Transaction
-) -> Tuple[Uint, Tuple[Log, ...]]:
+    env: vm.Environment, tx: Transaction,receipt: Receipt
+) -> Receipt:
     """
     Execute a transaction against the provided environment.
 
@@ -643,6 +719,7 @@ def process_transaction(
 
     Returns
     -------
+    Receipt,add two parameters:
     gas_left : `ethereum.base_types.U256`
         Remaining gas after execution.
     logs : `Tuple[ethereum.blocks.Log, ...]`
@@ -654,7 +731,10 @@ def process_transaction(
     sender = env.origin
     sender_account = get_account(env.state, sender)
     gas_fee = tx.gas * tx.gas_price
-    if sender_account.nonce != tx.nonce:
+    sender_account_nonce=U256(sender_account.nonce)
+    tx_nonce=tx.nonce
+    print("sendernonce,txnonce:",sender_account_nonce,tx_nonce)
+    if sender_account_nonce != tx_nonce:
         raise InvalidBlock
     if Uint(sender_account.balance) < gas_fee + Uint(tx.value):
         raise InvalidBlock
@@ -700,7 +780,14 @@ def process_transaction(
     for address in output.accounts_to_delete:
         destroy_account(env.state, address)
 
-    return total_gas_used, output.logs
+    #update receipt info
+    if message.target!=message.current_target:
+        receipt.contract_address=message.current_target
+    receipt.gas_used=total_gas_used
+    receipt.logs=output.logs
+    receipt.bloom=logs_bloom(output.logs)
+
+    return receipt
 
 
 def compute_header_hash(header: Header) -> Hash32:

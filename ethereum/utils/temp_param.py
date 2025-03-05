@@ -21,11 +21,11 @@ HEADER_gas_limit = Uint(3000000)
 HEADER_extra_data = b''
 
 #Block, Temporary data related to the block
-BLOCK_gas_limit=Uint(10*10e9)   #The gas_limit value set in the mainnet.json file is too low.
+BLOCK_gas_limit=Uint(10*10e10)   #The gas_limit value set in the mainnet.json file is too low.
 
 # Environment Temporary data related to the Environment
 ENVIRONMENT_gas_limit = Uint(10 * 10**9)
 ENVIRONMENT_gas_price = Uint(20 * 10**9)
 
 # Coinbase address
-COINBASE_address = Bytes20(hex_to_bytes("0x001d14804b399c6ef80e64576f657660804fec0b"))
+COINBASE_address = Bytes20(hex_to_bytes("0x90F79bf6EB2c4f870365E785982E1f101E93b906"))
