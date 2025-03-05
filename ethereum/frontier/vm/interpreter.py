@@ -15,7 +15,7 @@ A straightforward interpreter that executes EVM code.
 from dataclasses import dataclass
 from typing import Optional, Set, Tuple
 
-from ethereum_types.bytes import Bytes0
+from ethereum_types.bytes import Bytes0, Bytes20
 from ethereum_types.numeric import U256, Uint, ulen
 
 from ethereum.exceptions import EthereumException
@@ -29,6 +29,7 @@ from ethereum.trace import (
     TransactionEnd,
     evm_trace,
 )
+from .. import state
 
 from ..blocks import Log
 from ..fork_types import Address
@@ -41,7 +42,7 @@ from ..state import (
     move_ether,
     rollback_transaction,
     set_code,
-    touch_account,
+    touch_account, State, increment_nonce,
 )
 from ..vm import Message
 from ..vm.gas import GAS_CODE_DEPOSIT, charge_gas
@@ -162,6 +163,9 @@ def process_create_message(message: Message, env: Environment) -> Evm:
     # * The first `CREATE` left empty code.
     destroy_storage(env.state, message.current_target)
 
+    # mark_account_created(env.state, message.current_target)
+    # increment_nonce(env.state, message.current_target)
+
     evm = process_message(message, env)
     if not evm.error:
         contract_code = evm.output
@@ -180,7 +184,7 @@ def process_create_message(message: Message, env: Environment) -> Evm:
 
 def process_message(message: Message, env: Environment) -> Evm:
     """
-    Executes a call to create a smart contract.
+    Executes a call to smart contract.
 
     Parameters
     ----------
@@ -276,3 +280,22 @@ def execute_code(message: Message, env: Environment) -> Evm:
         evm.gas_left = Uint(0)
         evm.error = error
     return evm
+
+def mark_account_created(_state: State, address: Address) -> None:
+    """
+    Mark an account as having been created in the current transaction.
+    This information is used by `get_storage_original()` to handle an obscure
+    edgecase.
+
+    The marker is not removed even if the account creation reverts. Since the
+    account cannot have had code prior to its creation and can't call
+    `get_storage_original()`, this is harmless.
+
+    Parameters
+    ----------
+    state: `State`
+        The state
+    address : `Address`
+        Address of the account that has been created.
+    """
+    state.touch_account(_state,address)

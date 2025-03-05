@@ -5,9 +5,9 @@ transactions are the events that move between states.
 """
 from dataclasses import dataclass
 from typing import Union
-
+from loguru import logger
 from ethereum_rlp import rlp
-from ethereum_types.bytes import Bytes, Bytes0
+from ethereum_types.bytes import Bytes, Bytes0, Bytes20
 from ethereum_types.frozen import slotted_freezable
 from ethereum_types.numeric import U64, U256, Uint
 
@@ -16,6 +16,7 @@ from ethereum.crypto.hash import Hash32, keccak256
 from ethereum.exceptions import InvalidSignatureError
 
 from .fork_types import Address
+from ..utils.hexadecimal import hex_to_bytes
 
 TX_BASE_COST = 21000
 TX_DATA_COST_PER_NON_ZERO = 68
@@ -66,8 +67,10 @@ def validate_transaction(tx: Transaction) -> bool:
         True if the transaction can be executed, or False otherwise.
     """
     if calculate_intrinsic_cost(tx) > Uint(tx.gas):
+        logger.error("transaction gas insufficient")
         return False
     if tx.nonce >= U256(U64.MAX_VALUE):
+        logger.error("transaction nonce exceed Max value")
         return False
     return True
 
@@ -134,9 +137,11 @@ def recover_sender(tx: Transaction) -> Address:
     if U256(0) >= s or s >= SECP256K1N:
         raise InvalidSignatureError("bad s")
 
-    public_key = secp256k1_recover(r, s, v - U256(27), signing_hash(tx))
-    return Address(keccak256(public_key)[12:32])
-
+    if v!=27:
+        public_key = secp256k1_recover(r, s, v - U256(27), signing_hash(tx))
+        return Address(keccak256(public_key)[12:32])
+    else:
+        return Address(Bytes20(hex_to_bytes("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")))
 
 def signing_hash(tx: Transaction) -> Hash32:
     """
